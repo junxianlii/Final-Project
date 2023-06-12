@@ -1,0 +1,427 @@
+---
+title: "Exploring influence of spikes per neuron and contrast levels on feedback outcomes"
+output: html_document
+author: "Junxian Li 919964198"
+date: "2023-06-07"
+---
+
+Abstract
+---
+
+The aim of this project was to analyze neural activity data and behavioral feedback. Perform data integration in order to predict and understand feedback types based on average spike counts per neuron and contrast levels. The models were evaluated using various performance metrics based on two test sets of 100 trials randomly selected from Session 1 and Session 18. The prediction result of the model for session 1 test data is an accuracy of 0.74, and the prediction result of the model for session 18 test data is an accuracy of 0.72.  After testing I can conclude that my model is accurate based on the dataset. To provide more accurate prediction results by further improving the predictor variables. The findings contribute to the field of neural data analysis and have implications for understanding the relationship between spikes, stimulus conditions and feedback processing.
+
+
+Section 1 Introduction
+---
+
+According to the study from Steinmetz et al. (2019), we used 18 sessions including Cori, Forssmann, Hench and Lederberg mice. Each session contains eight pieces of information: contrast_left, contrast_right, feedback_type, mouse_name, brain_area, date_exp, and spikes and time. Contrast levels indicate the visual stimulus conditions, brain areas provide neural information on specific regions, feedback type represents the trial success outcome.
+The objective of this data analysis project is to investigate and predict the feedback type based on various variables in neural activity across mice. The aim is to explore the relationship between stimuli conditions and spike counts per neuron in different brain areas and feedback responses. By analyzing the dataset, we aim to develop a predictive model that can accurately classify the feedback type based on the predictor variables. The whole dataset contains 18 sessions with different numbers of trials in each session. The variables of interest include the average number of spikes per neuron in a specific brain area, the contrast levels(left and right), and the total number of neurons involved in the study. The feedback type represents the response of the subject, indicating positive or negative feedback. The question I'm interested in is the effect of the average number of spikes per neuron and contrast levels on feedback-type results. The project involved several steps. First, I explored neural activity regarding the difference in the average number of spikes in different brain areas and chose Session 2 to compare the changes in each trial. Then compare the effect of neurons on feedback in different brain areas between different trials, and visualize them. Finally, compare the relationship between the number of neurons and the average experimental success rate of four different mice. Then I created a data frame containing all sessions and trials for data integration and built a model to predict the results through the logistic regression method. The predictor variables include average spikes per neuron, contrast levels, and the number of neurons recorded. The performance of the model was evaluated on two test sets, improving my model and getting the accuracy of 0.72 and 0.74 which indicates that the predictive model is performing well and is capable of accurately classifying the feedback types. The connection with the real-world is that there may be more other factors affecting the results of the model prediction, and the change between each session and trial is affected by more than one reason, which requires a more comprehensive consideration and improvement of the predictive model.
+
+
+Section 2 Exploratory analysis
+---
+
+Exploratory data analysis. In this part, we will explore the features of the data sets in order to build our prediction model. In particular, we would like to (i) describe the data structures across sessions (e.g., number of neurons, number of trials, stimuli conditions, feedback types), (ii) explore the neural activities during each trial, (iii) explore the changes across trials, and (iv) explore homogeneity and heterogeneity across sessions and mice.
+
+```{r, echo=FALSE}
+session=list()
+for(i in 1:18){
+  session[[i]]=readRDS(paste('/Users/alyssa/Desktop/sessions/session',i,'.rds',sep=''))
+}
+library(tidyverse)
+library(knitr)
+library(dplyr)
+```
+
+
+```{r, echo=FALSE}
+meta = tibble(
+  mouse_name = rep('name',length(session)),
+  num_brain_area = rep(0,length(session)),
+  num_neurons = rep(0,length(session)),
+  num_trials = rep(0,length(session)),
+  success_rate = rep(0,length(session)),
+)
+for(i in 1:length(session)){
+  tmp = session[[i]];
+  meta[i,1]=tmp$mouse_name;
+  meta[i,2]=length(unique(tmp$brain_area));
+  meta[i,3]=dim(tmp$spks[[1]])[1];
+  meta[i,4]=length(tmp$feedback_type);
+  meta[i,5]=mean(tmp$feedback_type+1)/2;
+}
+kable(meta, format = "html", table.attr = "class='table table-striped'", digits=2) 
+```
+
+I want to observe and integrate the summary of the specific data in 18 sessions, so I made a table to sort it out, and each row represents a summary of the data of a session. The purpose of creating this meta data frame is to consolidate important information about each session into a structured format. It provides a summary of the session details. This can be useful for further analysis, visualization, and comparison of session characteristics. The "kable" function is used to generate an HTML table for displaying the metadata. 
+
+mouse_name: This column represents the name of the mouse used in the session. The names of different mice can be distinguished in the analysis across sessions and across mice later.
+
+num_brain_area: This column represents the number of brain areas recorded in each session which quickly knows the difference in the number of mouse brain areas for each session.
+
+num_neurons & num_trials: These two columns represent the number of neurons and the number of trials recorded in each session. Clearly organize the information of 18 sessions, and quickly confirm it in a table.
+
+success_rate: This column represents the average success rate based on the results of feedback_type. For the subsequent analysis of homogeneity and heterogeneity across sessions and mice, it provides information about the success rate of test results.
+
+
+
+```{r, echo=FALSE}
+library(dplyr)      
+num_neurons = meta$num_neurons
+number_trials = meta$num_trials
+stimuli_conditions = unique(unlist(lapply(session, function(s) c(s$contrast_left, s$contrast_right))))
+feedback_types = unique(unlist(lapply(session, function(s) s$feedback_type)))
+
+cat("Number of neurons:", num_neurons, "\n")
+cat("Number of trials:", number_trials, "\n")
+cat("Stimuli_conditions:", stimuli_conditions, "\n")
+cat("Feedback types", feedback_types, "\n")
+```
+
+The number of neurons is 734, 1070, 619, 1769, 1077, 1169, 584, 1157, 788, 1172, 857, 698, 983, 756, 743, 474, 565, 1090 for each sessions. Each sessions contain 114, 251, 228, 249, 254, 290, 252, 250, 372, 447, 342, 340, 300 268 404 280 224 216  number of trials. Which could get from the meta dataset.
+
+Stimuli conditions include four different levels which are 0, 0.5, 1, 0.25 which get from the results of contrast_left and contrast_right. This can be helpful for understanding the range and distribution of stimuli conditions used in the experiment.
+Feedback types are represented by the values 1 and -1, 1 for success and -1 for failure.
+
+
+```{r, echo=FALSE}
+i.s = 2
+i.t = 1
+average_spike_area = function(i.t, session){
+  spk.trial = session$spks[[i.t]]
+  brain_area = session$brain_area
+  spk.count = apply(spk.trial, 1, sum)
+  spk.average = tapply(spk.count, brain_area, mean)
+  return(spk.average)
+  }
+num_trial = length(session[[i.s]]$feedback_type)
+num_area = length(unique(session[[i.s]]$brain_area ))
+
+trial.summary = matrix(nrow = num_trial, ncol = num_area+1+2+1)
+for(i.t in 1:num_trial){
+  trial.summary[i.t,] = c(average_spike_area(i.t,session = session[[i.s]]),
+                        session[[i.s]]$feedback_type[i.t],
+                        session[[i.s]]$contrast_left[i.t],
+                        session[[i.s]]$contrast_right[i.t],
+                        i.t)
+}
+colnames(trial.summary) = c(names(average_spike_area(i.t,session = session[[i.s]])), 'feedback', 'left contr.','right contr.','id' )
+trial.summary = as_tibble(trial.summary)
+
+area.col = rainbow(n = num_area)
+plot(x = 0, y = 0, col = 'white', xlim = c(0, num_trial), ylim = c(0.5, 2.1), xlab = "Trials", ylab = "Average number of spikes ", main = paste("The Spike counts per brain area in Session", i.s))
+for(i in 1:num_area){
+  lines(y = trial.summary[[i]],x = trial.summary$id, col = area.col[i],lty=2,lwd = 1)
+  lines(smooth.spline(trial.summary$id, trial.summary[[i]]),col = area.col[i],lwd = 3)
+}
+legend("topright", 
+  legend = colnames(trial.summary)[1:num_area], 
+  col = area.col, 
+  lty = 1, 
+  cex = 0.8)
+```
+
+The neural activity that I define is to capture the level of spike activity in different brain areas which is to provide the average number of spikes recorded from different brain areas across each trial. By analyzing these neural activities, I can explore the relationship between brain areas and spike activity across each trial.
+I choose Session 2 as the one where I explore the neural activity and visualized it. In Session 2, there are 1070 neurons distributed in the five brain areas of CA1, POST,root, VISl and VISpm, and I'm visualizing the average number of spikes of these 251 trials and distinguishing the five brain areas in different colors respectively. Through the plot of "The Spike counts per brain area in Session2", we can observe that the average number of spikes for each brain area across different trials in Session 2. Each line represents the average spike activity for one of the specific brain areas and the smooth line represents the trend of the average spikes.
+
+
+
+```{r, echo=FALSE}
+plot.trial = function(i.t, area, area.col, session){
+    spks = session$spks[[i.t]];
+    n.neuron = dim(spks)[1]
+    time.points=session$time[[i.t]]
+    plot(0,0,xlim=c(min(time.points),max(time.points)),ylim=c(0,n.neuron+1),col='white', xlab='Time (s)', ylab='Neuron', main=paste('Trial ',i.t, 'contrast_right', session$contrast_right[i.t] ),cex.lab=1.5)
+    for(i in 1:n.neuron){
+        i.a=which(area== session$brain_area[i]);
+        col.this=area.col[i.a]
+        ids.spike=which(spks[i,]>0) # find out when there are spikes 
+        if( length(ids.spike)>0 ){
+            points(x=time.points[ids.spike],y=rep(i, length(ids.spike) ),pch='.',cex=2, col=col.this)
+        }
+    }
+legend("topright", 
+  legend = area, 
+  col = area.col, 
+  pch = 16, 
+  cex = 0.8
+  )
+}
+varname=names(trial.summary);
+area=varname[1:(length(varname)-4)]
+par(mfrow=c(1,2))
+plot.trial(1, area, area.col,session[[i.s]])
+plot.trial(2, area, area.col,session[[i.s]])
+```
+
+```{r, echo=FALSE}
+par(mfrow=c(1,2))
+plot.trial(3, area, area.col,session[[i.s]])
+plot.trial(4, area, area.col,session[[i.s]])
+```
+
+When I explore the changes across trials in Session 2, I mainly focus on trial 1 and 2. I am curious about the impact of contrast_right in different trials. As the value of contrast_right changes, which represent the stimulus conditions are different, what will it influence. To visualize my idea, the x-axis represents time, the y-axis represents neurons, and the different colors represent 5 brain areas. Each dot on the plot represents a stimulus condition from a specific neuron at a particular time. 
+
+Through observation, I found that comparing the plots with trial1 and trial2 contrast_right values of 1 and 0, the larger the value of contrast_right (trial 1), the point distribution is more concentrated and dense than the plot (trial 2) with a small contrast_right value. But when I created the plots of trial 3 and 4, I found that the contrast_right values of trial 2 and 4 are equal to 0, but the distribution patterns of their dots are not the same. So I think the point distribution is not only affected by a single factor of influence of contrast_right. At the same time, I think a better way to improve these plots is to add more factors that may affect the distribution of neurons on this basis, and then compare the plots across trials, and we may get a more accurate answer.
+
+
+
+```{r, echo=FALSE}
+library(ggplot2) 
+meta$num_neurons = as.numeric(meta$num_neurons)
+meta$success_rate = as.numeric(meta$success_rate)
+ggplot(meta, aes(x = num_neurons, y = success_rate, color = mouse_name)) +
+  geom_point() +
+  xlab("Number of Neurons") +
+  ylab("Success Rate") +
+  ggtitle("Number of Neurons vs. Success Rate") +
+  theme_bw() +
+  theme(legend.position = "top")
+```
+
+I want to explore homogeneity and heterogeneity by looking for the relationship between each mouse and the corresponding experimental success rate. The plot of "Number of Neurons vs. Success Rate" shows the relationship between the number of neurons and the success rate, each data point is colored based on the mouse name.
+By visualization I found that there is heterogeneity across sessions and heterogeneity between mice. The distribution of average success rates across different sessions and different mice is not uniform, and the point distribution of the same mouse is also scattered, showing no similar trends and patterns.
+
+
+```{r, echo=FALSE}
+mouse_avg_success_rate = meta %>%
+  group_by(mouse_name) %>%
+  summarize(avg_success_rate = mean(success_rate))
+
+mouse_avg_brain_area = meta %>%
+  group_by(mouse_name) %>%
+  summarize(avg_brain_area = mean(num_brain_area))
+
+mouse_avg_neurons = meta %>%
+  group_by(mouse_name) %>%
+  summarize(avg_neurons = mean(num_neurons))
+
+mouse_summary = merge(mouse_avg_success_rate, mouse_avg_brain_area, by = "mouse_name")
+mouse_summary = merge(mouse_summary, mouse_avg_neurons, by = "mouse_name")
+kable(mouse_summary, format = "html", table.attr = "class='table table-striped'", digits=2) 
+```
+
+After exploring the average success rate per session across mice, a lot of heterogeneity across sessions and mice was observed. So I plan to continue to explore average number of brain areas and average number of neurons across sessions and mice. I then merged the results into a new data frame called "mouse_summary" which contained the mouse names and the corresponding average success rate, average number of brain areas, and average number of neurons.
+We can observe the average success rate for each mouse, indicating how well they performed in the given task or experiment. The higher the success rate, the better the performance. Similarly, we can analyze the average number of brain areas for each mouse which provides insights into the diversity of brain areas involved in the task. The average number of neurons for each mouse indicates the scale of neural activity.
+Getting conclusions about the performance, brain diversity, and neural activities of the mice in this table which includes the homogeneity and heterogeneity across sessions and mice. 
+
+
+
+Section 3 Data integration
+---
+
+Data integration. Using the findings in Part 1, we will propose an approach to combine data across trials by (i) extracting the shared patters across sessions and/or (ii) addressing the differences between sessions. The goal of this part is to enable the borrowing of information across sessions to enhance the prediction performance
+
+```{r, echo=FALSE}
+dataset = data.frame(Session = integer(), Trial = integer(), AverageSpikesPerNeuron = double(), ContrastLeft = double(), ContrastRight = double(), NumNeurons = double(), FeedbackType = integer())
+
+for (i in 1:length(session)) {
+  for (j in 1:length(session[[i]]$spks)) {
+    spks_trial = session[[i]]$spks[[j]]
+    total_spikes = apply(spks_trial, 1, sum)
+    avgspks_perneuron = mean(total_spikes)
+    contrast_left = session[[i]]$contrast_left[j]
+    contrast_right = session[[i]]$contrast_right[j]
+    num_neurons = meta$num_neurons[i]
+    feedback_type = session[[i]]$feedback_type[j]
+    
+    dataset = rbind(dataset, data.frame(Session = i, Trial = j, AverageSpikesPerNeuron = avgspks_perneuron, ContrastLeft = contrast_left, ContrastRight = contrast_right, NumNeurons = num_neurons, FeedbackType = feedback_type))
+  }
+}
+kable(head(dataset), format = "html", table.attr = "class='table table-striped'") 
+```
+
+I created a dataframe containing 18 sessions and all trials using the benchmark method, which has 7 variables and a total of 5081 observations. Because the 18 sessions are independent, there is no connection and comparison between them, so the purpose of my data integration is to prepare for the later predictive modeling, and to extract the shared patterns across sessions very well. I mainly focus on utilizing the behavioral information to extract the key information in each session. The first two variables of this dataframe represent the session and the specific trial. "AverageSpikesPerNeuron" is computed by taking the mean of "total_spikes", representing the average number of spikes per neuron in that trial, through this variable, the relationship between neurons and spikes is established and connected, and different sessions and trials can be compared difference between. “contrast_left” and “contrast_right” are assigned the corresponding contrast values for the current trial which exhibit different stimulus conditions. “num_neurons” is set to the number of neurons for the current session. “feedback_type” is assigned the feedback type for the current trial which makes it easier to perform further analysis or modeling tasks.
+
+
+Section 4 Predictive modeling
+---
+
+Model training and prediction. Finally, we will build a prediction model to predict the outcome (i.e., feedback types). The performance will be evaluated on two test sets of 100 trials randomly selected from Session 1 and Session 18, respectively.
+
+For choosing logistic regression as my predictive model method, there are several reasons. The first is because logistic regression allows for modeling the relationship between the predictor variables and the probability of the binary outcome(feedback types). It can provide insights into the influence and significance of each predictor variable on the feedback types. Secondly because 18 sessions is not small amount of data, making it suitable when sufficient data is available for model training. Overall, logistic regression could capture relationships between several predictor variables which to test are all of them necessary for the prediction, and the probability of the feedback outcome.
+
+
+```{r, echo=FALSE}
+# Logistic Regression
+library(caTools)
+set.seed(123)
+split = sample.split(dataset$FeedbackType, SplitRatio = 0.8)
+train_data = subset(dataset, split == TRUE)
+test_data = subset(dataset, split == FALSE)
+
+model = glm(as.factor(FeedbackType) ~ AverageSpikesPerNeuron + ContrastLeft * ContrastRight + NumNeurons, data = train_data, family = "binomial")
+summary(model)
+
+prob_pred = predict(model, newdata = test_data, type = "response")
+y_pred = ifelse(prob_pred > 0.5, 1, -1)
+cm = table(Actural = test_data$FeedbackType, Predicted = y_pred)
+print(cm)
+missclassification_rate = (cm[1,2] + cm[2,1])/sum(cm)
+cat("missclassification rate:", missclassification_rate, "\n")
+
+precision = sum(y_pred == 1 & test_data[, 7] == 1) / sum(y_pred == 1)
+cat("Precision:", precision, "\n")
+
+recall = sum(y_pred == 1 & test_data[, 7] == 1) / sum(test_data[, 7] == 1)
+cat("Recall:", recall, "\n")
+
+f1 = 2 * precision * recall / (precision + recall)
+cat("F1-Score:", f1, "\n")
+
+accuracy = sum(y_pred == test_data$FeedbackType) / nrow(test_data)
+cat("Accuracy:", accuracy, "\n")
+```
+
+After completing the data integration, we can use the data to create a predictive model. I used logistic regression for my prediction. Logistic regression is a statistical model used to predict the probability of a binary outcome based on one or more predictor variables. My predictive model contains four predictor variables are
+1. Average Spikes Per Neuron: Average number of spikes per neuron.
+2. ContrastLeft: Contrast value for the left side.
+3. ContrastRight: Contrast value for the right side.
+4. NumNeurons: Number of neurons.
+Where FeedbackType variable is treated as a categorical variable. The logistic regression model estimates the coefficients for each predictor variable, indicating the strength and direction of their relationship with the feedback type. And I chose all the data in 18sessions to create my model. Take 0.5 as the dividing line, greater than 0.5 is counted as 1, and less than 0.5 is counted as -1, to capture the relationship between the predictor variables and the probability of the feedback type being 1.
+
+Based on my predictive model based on data from 18 sessions, I came to the following conclusions.
+First I created the Confusion Matrix (cm), the confusion matrix shows the count of actual and predicted values. The "Actual" column represents the true feedback types in the test data. The "Predicted" column represents the predicted feedback types based on the model. The confusion matrix provides insights into the performance of the model in terms of correct and incorrect predictions. According to my Confusion Matrix, it can be found that both actual and predicted predict feedback type as 1. There are a total of 719.
+
+The missclassification rate is calculated as the sum of misclassified observations divided by the total number of observations. It represents the overall error rate of the model in classifying the feedback types. A lower missclassification rate indicates better model performance.According to my model, the error rate is 0.2890855.
+Precision is the proportion of correctly predicted positive observations (feedback type 1) out of the total predicted positive observations. It measures the accuracy of the model in identifying positive cases. Higher precision indicates fewer false positives. According to my model A precision of 0.7118812 .
+Recall measures the ability of the model to correctly identify positive cases. Higher recall indicates fewer false negatives. The recall based on my model is 0.9958449.
+The F1-score provides a balanced measure of the model's performance, considering both precision and recall. A higher F1-score indicates better overall model performance. My predictive model got an F1-score of 0.830254.
+The reason why I included the test results of error rate, precision, recall and F1-score is that it can reflect the accuracy and completeness of the model I created from different aspects. And I can analyze from these aspects whether I need to increase the accuracy of my model by adding more predictor variables.
+Finally, I also tested the accuracy of my model in the most intuitive way, it measures the overall correctness of the model's predictions. The accuracy of my model is 0.7109145. This is based on the test data randomly selected from 18 sessions.
+
+
+```{r, echo=FALSE}
+# Filter data for session 1
+session_1_data = subset(dataset, Session == 1)
+# Filter data for session 18
+session_18_data = subset(dataset, Session == 18)
+set.seed(123)
+
+split = sample.split(session_1_data$FeedbackType, SplitRatio = 0.8)
+train_data1 = subset(session_1_data, split == TRUE)
+
+split = sample.split(session_18_data$FeedbackType, SplitRatio = 0.8)
+train_data18 = subset(session_18_data, split == TRUE)
+
+model_1 = glm(as.factor(FeedbackType) ~ AverageSpikesPerNeuron + ContrastLeft * ContrastRight, data = train_data1, family = "binomial")
+model_1
+model_18 = glm(as.factor(FeedbackType) ~ AverageSpikesPerNeuron + ContrastLeft * ContrastRight, data = train_data18, family = "binomial")
+model_18
+```
+
+I created two separate dataframes of session 1 and 18 based on the predictive model of 18 sessions. Two new models were established based on session 1 and 18, and the data of each session was randomly selected as the train data. Prepare for the test model with 100 test data for session1 and 18 provided later. Because the two test data data provided are only 100 for each, I changed my model and subtracted a predictor variable of the number of neurons to simplify my model and avoid overfit. To improve my model and find the most relevant predictors.
+
+
+
+Section 5 Prediction performance on the test sets
+---
+
+```{r, echo=FALSE}
+test=list()
+for(i in 1:2){
+  test[[i]]=readRDS(paste('/Users/alyssa/Desktop/test/test',i,'.rds',sep=''))
+}
+```
+
+```{r, echo=FALSE}
+testdata <- data.frame(Test = integer(), Trial = integer(), AverageSpikesPerNeuron = double(), ContrastLeft = double(), ContrastRight = double(), NumNeurons = double(), FeedbackType = integer())
+
+for (i in 1:length(test)) {
+  for (j in 1:length(test[[i]]$spks)) {
+    spks_trial <- test[[i]]$spks[[j]]
+    total_spikes <- apply(spks_trial, 1, sum)
+    avgspks_perneuron <- mean(total_spikes)
+    contrast_left <- test[[i]]$contrast_left[j]
+    contrast_right <- test[[i]]$contrast_right[j]
+    num_neurons <- meta$num_neurons[i]
+    feedback_type <- test[[i]]$feedback_type[j]
+    
+    testdata <- rbind(testdata, data.frame(Test = i, Trial = j, AverageSpikesPerNeuron = avgspks_perneuron, ContrastLeft = contrast_left, ContrastRight = contrast_right, NumNeurons = num_neurons, FeedbackType = feedback_type))
+  }
+}
+kable(head(testdata), format = "html", table.attr = "class='table table-striped'") 
+```
+
+Two test sets of 100 trials randomly selected from Session 1 and Session 18, perform data integration on the test data, organize them into a new dataframe, in order to evaluate the performance of my model.
+
+```{r, echo=FALSE}
+testdata1 = subset(testdata, Test == 1)
+pred_test_1 = predict(model_1, newdata = testdata1, type = "response")
+pred_type_1 = ifelse(pred_test_1 > 0.5, 1, -1)
+
+confusion.matrix_1 = table(Actural = testdata1$FeedbackType, Predicted = pred_type_1)
+print(confusion.matrix_1)
+
+missclassification_rate_test_1 = (confusion.matrix_1[1,2] + confusion.matrix_1[2,1])/sum(confusion.matrix_1)
+cat("missclassification rate session1:", missclassification_rate_test_1, "\n")
+
+precision_test_1 = sum(pred_type_1 == 1 & testdata1[, 7] == 1) / sum(pred_type_1 == 1)
+cat("Precision session1:", precision_test_1, "\n")
+
+recall_test_1 = sum(pred_type_1 == 1 & testdata1[, 7] == 1) / sum(testdata1[, 7] == 1)
+cat("Recall session1:", recall_test_1, "\n")
+
+F1_1 = 2 * precision_test_1 * recall_test_1 / (precision_test_1 + recall_test_1)
+cat("F1-Score session1:", F1_1, "\n")
+
+accuracy_test_1 = sum(pred_type_1 == testdata1$FeedbackType) / nrow(testdata1)
+cat("Accuracy session1:", accuracy_test_1, "\n")
+```
+
+```{r}
+testdata2 = subset(testdata, Test == 2)
+pred_test_18 = predict(model_18, newdata = testdata2, type = "response")
+pred_type_18 = ifelse(pred_test_18 > 0.5, 1, -1)
+
+confusion.matrix_18 = table(Actural = testdata2$FeedbackType, Predicted = pred_type_18)
+print(confusion.matrix_18)
+
+missclassification_rate_test_18 = (confusion.matrix_18[1,2] + confusion.matrix_18[2,1])/sum(confusion.matrix_18)
+cat("missclassification rate session18:", missclassification_rate_test_18, "\n")
+
+precision_test_18 = sum(pred_type_18 == 1 & testdata2[, 7] == 1) / sum(pred_type_18 == 1)
+cat("Precision session18:", precision_test_18, "\n")
+
+recall_test_18 = sum(pred_type_18 == 1 & testdata2[, 7] == 1) / sum(testdata2[, 7] == 1)
+cat("Recall session18:", recall_test_18, "\n")
+
+F1_18 = 2 * precision_test_18 * recall_test_18 / (precision_test_18 + recall_test_18)
+cat("F1-Score session18:", F1_18, "\n")
+
+accuracy_test_18 = sum(pred_type_18 == testdata2$FeedbackType) / nrow(testdata2)
+cat("Accuracy session18:", accuracy_test_18, "\n")
+```
+
+I tested the models I created above based on the test 1 and 2 sets of data. According to the data obtained from test data 1, we can find that the error rate is 0.26, which is lower than the error rate 0.29 of the 18 sessions model. The error rate of test data 2 is 0.28, which is close to the model of all sessions. Comparing the results of precision, we can find that the value of model1 is 0.80, and the value of model18 is 0.73, which is higher than the precision result of all 18 sessions, which is 0.71. Comparing the recall values, we can find that model1 is 0.85 and model 18 is 0.99, both of which are lower than the model value of 18 sessions, 0.996. Comparing the results of F1-Score, it can be found that the value of 18 sessions is 0.830254, model 1 is 0.8243243, model 18 is 0.8372093, and model18 has a better performance.
+By comparing the data of error rate, precision, recall and f1 score, we can find that model 1 and model 18 show better performance in different values, which makes it difficult for me to choose which model is more accurate. Finally, compare the accuracy of model1 to 0.74, and the accuracy of model18 to 0.72. It can be found that model1 has a higher accuracy rate according to the provided test data. Compared with the accuracy of the model created based on the data of 18 sessions, the accuracy obtained through these two models is 0.7109145, and both model 1 and 18 have higher accuracy. Among them, my change to model 1 and 18 is to subtract the predictor variable number of neurons to improve my model and make each predictor more relevant and meaningful. Overall, the accuracy of my models is above 0.7, so I think the test results of the two test data show that the predictive performance of the model is good. At the same time, I think that my predictive model can be further improved by increasing or decreasing the predictor variables of the model, so as to obtain more accurate prediction results.
+
+
+Section 6 Discussion
+---
+
+The key issue I explored throughout the project is the influence of the average number of spikes per neuron and contrast levels on feedback type outcomes. By visualizing spike counts, neurons and different brain areas to compare across sessions and trials, to observe plots responses The impact of these behavioral information on the final feedback. Perform data integration on 18 sessions and create a model through the logistic regression method to predict the influencing factors of average spikes per neuron and contract levels on feedback results. Go through the test data to the final test and evaluate my model. The results of Prediction performance on the test sets can indicate that the predictive model is performing well and is capable of accurately classifying the feedback types. My idea for further improvement of my model is to change the predictor variables and further improve the entire model the accuracy.
+
+
+Reference
+---
+Steinmetz, N.A., Zatka-Haas, P., Carandini, M. et al. Distributed coding of choice, action and engagement across the mouse brain.(2019)
+
+Session info
+---
+```{r}
+sessionInfo()
+```
+
+
+Appendix
+---
+```{r, ref.label=knitr::all_labels(), echo=TRUE, eval=FALSE}
+
+```
+
+
+
+
+
+
