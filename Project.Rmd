@@ -121,6 +121,7 @@ legend("topright",
   cex = 0.8)
 ```
 
+The reason why I created this plot is because I want to explore the relationship and influence of average spikes per neurons in different brain areas, and to observe the changes of each trial through visualization.
 The neural activity that I define is to capture the level of spike activity in different brain areas which is to provide the average number of spikes recorded from different brain areas across each trial. By analyzing these neural activities, I can explore the relationship between brain areas and spike activity across each trial.
 I choose Session 2 as the one where I explore the neural activity and visualized it. In Session 2, there are 1070 neurons distributed in the five brain areas of CA1, POST,root, VISl and VISpm, and I'm visualizing the average number of spikes of these 251 trials and distinguishing the five brain areas in different colors respectively. Through the plot of "The Spike counts per brain area in Session2", we can observe that the average number of spikes for each brain area across different trials in Session 2. Each line represents the average spike activity for one of the specific brain areas and the smooth line represents the trend of the average spikes.
 
@@ -160,6 +161,7 @@ plot.trial(3, area, area.col,session[[i.s]])
 plot.trial(4, area, area.col,session[[i.s]])
 ```
 
+I created these plots because I wanted to explore how different contract levels affect the distribution of neurons. What is the relationship between the behavioral information of each trial.
 When I explore the changes across trials in Session 2, I mainly focus on trial 1 and 2. I am curious about the impact of contrast_right in different trials. As the value of contrast_right changes, which represent the stimulus conditions are different, what will it influence. To visualize my idea, the x-axis represents time, the y-axis represents neurons, and the different colors represent 5 brain areas. Each dot on the plot represents a stimulus condition from a specific neuron at a particular time. 
 
 Through observation, I found that comparing the plots with trial1 and trial2 contrast_right values of 1 and 0, the larger the value of contrast_right (trial 1), the point distribution is more concentrated and dense than the plot (trial 2) with a small contrast_right value. But when I created the plots of trial 3 and 4, I found that the contrast_right values of trial 2 and 4 are equal to 0, but the distribution patterns of their dots are not the same. So I think the point distribution is not only affected by a single factor of influence of contrast_right. At the same time, I think a better way to improve these plots is to add more factors that may affect the distribution of neurons on this basis, and then compare the plots across trials, and we may get a more accurate answer.
